@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  booking-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: booking_db
+      POSTGRES_USER: booking_user
+      POSTGRES_PASSWORD: booking_pass
+    volumes:
+      - booking_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking_user -d booking_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  flight-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: flight_db
+      POSTGRES_USER: flight_user
+      POSTGRES_PASSWORD: flight_pass
+    volumes:
+      - flight_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flight_user -d flight_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  flight-service:
+    build: ./flight-service
+    environment:
+      DATABASE_URL: postgresql://flight_user:flight_pass@flight-db:5432/flight_db
+      REDIS_URL: redis://redis:6379
+      GRPC_PORT: "50051"
+      API_KEY: super-secret-api-key-change-in-prod
+    ports:
+      - "50051:50051"
+    depends_on:
+      flight-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  booking-service:
+    build: ./booking-service
+    environment:
+      DATABASE_URL: postgresql://booking_user:booking_pass@booking-db:5432/booking_db
+      FLIGHT_SERVICE_URL: flight-service:50051
+      FLIGHT_SERVICE_API_KEY: super-secret-api-key-change-in-prod
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      booking-db:
+        condition: service_healthy
+      flight-service:
+        condition: service_started
+
+volumes:
+  booking_db_data:
+  flight_db_data:
+  redis_data:
